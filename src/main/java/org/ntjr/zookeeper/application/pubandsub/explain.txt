@@ -1,0 +1,9 @@
+参考资料：
+spring: 加载远程配置
+https://www.cnblogs.com/yjmyzz/p/how-to-load-remote-config-in-spring.html
+
+spring 源码加载过程：
+https://segmentfault.com/a/1190000012461362
+
+spring 源码加载配置文件占位符
+https://www.cnblogs.com/xrq730/p/6785473.html

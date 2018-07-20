@@ -1,6 +1,7 @@
 package org.ntjr.zookeeper;
 
 import org.apache.zookeeper.*;
+import org.apache.zookeeper.data.Stat;
 import org.junit.Test;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.concurrent.CountDownLatch;
 public class Zookeeper_Constructor implements Watcher {
     private static CountDownLatch connectedSemaphore = new CountDownLatch(1);
     private static ZooKeeper zk = null;
+    private static Stat stat = new Stat();
 
     public static void main(String[] args) throws  Exception {
         ZooKeeper zooKeeper = new ZooKeeper("120.78.175.244:2181",5000,new Zookeeper_Constructor());
@@ -64,7 +66,7 @@ public class Zookeeper_Constructor implements Watcher {
      * 2.stat(描述节点状态信息)
      */
     @Test
-    public void getNode() throws  Exception{
+    public void getChildNode() throws  Exception{
         String path = "/zk-book8";
         zk = new ZooKeeper("120.78.175.244:2181",5000,new Zookeeper_Constructor());
         connectedSemaphore.await();
@@ -79,19 +81,76 @@ public class Zookeeper_Constructor implements Watcher {
     }
 
 
+    @Test
+    public void getNodeData() throws Exception{
+        String path = "/zk-book";
+        zk = new ZooKeeper("120.78.175.244:2181",5000,new Zookeeper_Constructor());
+        connectedSemaphore.await();
+        zk.create(path,"123".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+        /**
+         * getData的同步接口获取数据内容，调用时注册了一个Watcher
+         * 传入stat变量，从服务端响应中获取到数据节点的最新节点状态信息
+         */
+
+        System.out.println(new String(zk.getData(path,true,stat)));
+        System.out.println(stat.getCzxid() + "," + stat.getMzxid() + "," +stat.getVersion());
+        /**
+         * version用于指定节点的数据版本
+         * version参数由CAS原理衍化而来，代表预期值，表明针对该数据版本进行更新，避免并发问题
+         */
+        zk.setData(path,"123".getBytes(),-1);//更新
+        Thread.sleep(Integer.MAX_VALUE);
+    }
+
+    @Test
+    public void setNodeData() throws Exception{
+        String path = "/zk-book";
+        zk = new ZooKeeper("120.78.175.244:2181",5000,new Zookeeper_Constructor());
+        connectedSemaphore.await();
+
+        zk.create(path,"123".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+        zk.getData(path,true,null);
+
+        Stat stat = zk.setData(path,"456".getBytes(),-1);
+        System.out.println(stat.getCzxid() + "," +stat.getMzxid() + "," + stat.getVersion());
+        //数据版本从0开始  -1 客户端需要基于数据的最新版本进行更新操作
+        Stat stat2 = zk.setData(path,"456".getBytes(),-1);
+        System.out.println(stat2.getCzxid() + "," +stat2.getMzxid() + "," + stat2.getVersion());
+
+        try{
+            //使用之前数据版本1进行更新操作导致异常
+            zk.setData(path,"456".getBytes(),stat.getVersion());
+        }catch (KeeperException e){
+            System.out.println("Error:"+e.code() + "," + e.getMessage());
+        }
+        Thread.sleep(Integer.MAX_VALUE);
+    }
+
     @Override
     public void process(WatchedEvent event) {
         System.out.println("Receive watched event:"+event);
-        System.out.println("xxxx:"+(event.getType() == Event.EventType.NodeChildrenChanged));
         if(Event.KeeperState.SyncConnected == event.getState()){
             if(Event.EventType.None == event.getType() && null == event.getPath()){
                 connectedSemaphore.countDown();//解除主程序在CountDownLatch上的等待阻塞。至此，客户端会话创建完毕
             }else if(event.getType() == Event.EventType.NodeChildrenChanged){
+                /**
+                 * 事件通知中，是不包含最新的节点列表的
+                 * stat会被服务端响应的新stat对象替换
+                 */
                 try{
-                    System.out.println("xxxpath:"+event.getPath());
+                    /**
+                     * 获取新的子节点列表
+                     * getChildren是数据节点的相对节点路径
+                     * Watcher通知是一次性的，因此客户端需要反复注册Watcher
+                     */
                     System.out.println("ReGet Child:"+zk.getChildren(event.getPath(),true));
                 }catch (Exception e){}
 
+            }else if(event.getType() == Event.EventType.NodeDataChanged){
+                try{
+                    System.out.println(new String(zk.getData(event.getPath(),true,stat)));
+                    System.out.println(stat.getCzxid() + "," +stat.getMzxid() + "," +stat.getVersion());
+                }catch (Exception e){}
             }
 
         }
